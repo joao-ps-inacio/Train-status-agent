@@ -22,23 +22,34 @@ def parse_args() -> argparse.Namespace:
 
 def configure_logging() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-    # httpx logs every request URL at INFO, and the Telegram URL contains the bot token.
+    # httpx and httpx2 (used by the anthropic SDK) log every request URL at INFO,
+    # and the Telegram URL contains the bot token.
     logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpx2").setLevel(logging.WARNING)
 
 
 def main() -> None:
     args = parse_args()
     configure_logging()
     settings = Settings.from_env()
+    telegram = TelegramClient(settings.telegram_bot_token, settings.telegram_chat_id)
 
-    status = check_commute(anthropic.Anthropic(api_key=settings.anthropic_api_key)) or FALLBACK_MESSAGE
-    print(status)
+    try:
+        status = check_commute(anthropic.Anthropic(api_key=settings.anthropic_api_key)) or FALLBACK_MESSAGE
+    except Exception as error:
+        logger.exception("An error occurred while checking the commute")
+        message = f"⚠️ O agente falhou hoje ({type(error).__name__}). Vê fertagus.pt"
+        if args.dry_run:
+            print(message)
+        else:
+            telegram.send_message(message)
+        raise
 
     if args.dry_run:
-        logger.info("Dry run: message not sent to Telegram")
+        print(status)
         return
 
-    TelegramClient(settings.telegram_bot_token, settings.telegram_chat_id).send_message(status)
+    telegram.send_message(status)
     logger.info("Message sent to Telegram")
 
 
