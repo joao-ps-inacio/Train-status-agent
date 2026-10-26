@@ -41,14 +41,18 @@ Responde APENAS com estas 2 linhas, sem introdução nem conclusão:
 - ✅ Sem notícias de perturbações
 - ⚠️ <problema em no máximo 8 palavras> (<nome curto da fonte>)
 
-Só se houver um problema, acrescenta por baixo dessa linha "   ↳ <serviços mínimos ou o que fazer>",
-com no máximo 10 palavras.
+Só se houver um problema, acrescenta por baixo dessa linha:
+   ↳ <serviços mínimos ou o que fazer, no máximo 10 palavras>
+   🔗 <URL da notícia, copiado exatamente dos resultados da pesquisa>
 
 Exemplo:
 🚇 MTS: ⚠️ Greve até 27/10 (Executive Digest)
    ↳ Serviços mínimos por confirmar em mts.pt
+   🔗 https://exemplo.pt/noticia-da-greve
 🚆 Fertagus: ✅ Sem notícias de perturbações
 """
+
+LINK_PREFIX = "🔗"
 
 WEB_SEARCH_TOOL = {
     "type": "web_search_20250305",
@@ -72,6 +76,28 @@ def extract_final_answer(response: Message) -> str:
     return "".join(block.text for block in final_blocks if block.type == "text").strip()
 
 
+def search_result_urls(response: Message) -> set[str]:
+    """Return the URL of every page the web search returned."""
+    return {
+        result.url
+        for block in response.content
+        if block.type == "web_search_tool_result" and isinstance(block.content, list)
+        for result in block.content
+    }
+
+
+def drop_unknown_links(answer: str, known_urls: set[str]) -> str:
+    """Remove link lines whose URL is not a search result, so a mistyped or invented link never reaches Telegram."""
+    kept = []
+    for line in answer.splitlines():
+        stripped = line.strip()
+        if stripped.startswith(LINK_PREFIX) and stripped.removeprefix(LINK_PREFIX).strip() not in known_urls:
+            logger.warning("Dropped a link that is not in the search results: %s", stripped)
+            continue
+        kept.append(line)
+    return "\n".join(kept)
+
+
 def check_commute(client: anthropic.Anthropic) -> str:
     """Return a short summary of today's strikes or disruptions on the MTS and Fertagus."""
     response = client.messages.create(
@@ -82,4 +108,4 @@ def check_commute(client: anthropic.Anthropic) -> str:
         tools=[WEB_SEARCH_TOOL],
     )
     logger.info("Claude finished: stop_reason=%s, usage=%s", response.stop_reason, response.usage)
-    return extract_final_answer(response)
+    return drop_unknown_links(extract_final_answer(response), search_result_urls(response))
