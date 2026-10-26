@@ -1,2 +1,1 @@
-def main() -> None:
-    print("Hello from train-status-agent!")
+"""Daily check of the commute (MTS + Fertagus) with alerts sent to Telegram."""
