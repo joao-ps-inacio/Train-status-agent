@@ -20,7 +20,7 @@ jobs:
       - name: Check the commute
         # Shorter than the job limit, so the alert step below still has time to run.
         timeout-minutes: 8
-        run: uv run train-status-agent ${{ inputs.dry_run && '--dry-run' || '' }}
+        run: uv run not-a-command
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
