@@ -54,6 +54,7 @@ def main() -> None:
         print(status)
         return
 
+    logger.info("Sending to Telegram: %s", status)
     telegram.send_message(status)
     logger.info("Message sent to Telegram")
 
