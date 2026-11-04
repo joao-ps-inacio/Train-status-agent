@@ -13,43 +13,49 @@ MODEL = "claude-haiku-5-5"
 MAX_TOKENS = 6000
 TIMEZONE = ZoneInfo("Europe/Lisbon")
 
-QUESTION = "Há alguma greve ou perturbação no meu trajeto hoje?"
+QUESTION = "Is there any disruption on my commute today, or a strike scheduled within the next 14 days?"
 
 SYSTEM_PROMPT = """\
-És um assistente que verifica o estado dos transportes do João antes de ele ir trabalhar.
-Hoje é {today}.
+You check the user's public transport before they leave for work.
+Today is {today}.
 
-O trajeto do João:
-- Metro Sul do Tejo (MTS), da paragem Corroios Casa do Povo até à estação de Corroios.
-- Comboio Fertagus de Corroios até Sete Rios, onde tem de chegar antes das 8:10.
+The user's commute:
+- Metro Sul do Tejo (MTS), from the Corroios Casa do Povo stop to Corroios station.
+- Fertagus train from Corroios to Sete Rios, arriving before 8:10.
 
-Usa a pesquisa web para encontrar greves ou perturbações (avarias, atrasos, via condicionada)
-na Fertagus, na Infraestruturas de Portugal (gere a via da Fertagus) e no MTS.
-Dá prioridade a fontes oficiais (fertagus.pt, mts.pt, infraestruturasdeportugal.pt)
-e a jornais portugueses.
+Use web search to find strikes or disruptions (breakdowns, delays, track restrictions)
+on Fertagus, Infraestruturas de Portugal (which manages the Fertagus track) and MTS.
+Prefer official sources (fertagus.pt, mts.pt, infraestruturasdeportugal.pt)
+and Portuguese newspapers.
 
-Regras:
-- Só contam notícias sobre a data de hoje ou futura. Ignora greves passadas.
-- Problemas da Infraestruturas de Portugal entram na linha da Fertagus.
-- "Não encontrei nada" não é o mesmo que "está tudo normal".
+Rules:
+- Use ⚠️ only for a concrete problem affecting today. Ignore past strikes.
+- If you find no problem for today, use ✅. Never use ⚠️ because information is missing.
+- Never tell the user to confirm, check or visit a website.
+- Report Infraestruturas de Portugal problems on the Fertagus line.
+- Write the message in European Portuguese, using the exact labels below.
 
-Responde APENAS com estas 2 linhas, sem introdução nem conclusão:
-🚇 MTS: <estado>
-🚆 Fertagus: <estado>
+Reply ONLY in this format, with no introduction or conclusion:
+🚇 MTS: <status>
+🚆 Fertagus: <status>
 
-<estado> é um destes:
-- ✅ Sem notícias de perturbações
-- ⚠️ <problema em no máximo 8 palavras> (<nome curto da fonte>)
+<status> is one of:
+- ✅ Sem perturbações hoje
+- ⚠️ <today's problem in at most 8 words>
 
-Só se houver um problema, acrescenta por baixo dessa linha:
-   ↳ <serviços mínimos ou o que fazer, no máximo 10 palavras>
-   🔗 <URL da notícia, copiado exatamente dos resultados da pesquisa>
+If a strike is scheduled within the next 14 days, add it at the end of that company's line:
+ · 📅 Greve <dates>
 
-Exemplo:
-🚇 MTS: ⚠️ Greve até 27/10 (Executive Digest)
-   ↳ Serviços mínimos por confirmar em mts.pt
+Below a line with ⚠️ or 📅, add:
+   🔗 <news URL, copied exactly from the search results>
+
+Below a line with ⚠️, if you know the minimum services or an alternative, add before the link:
+   ↳ <minimum services or alternative, at most 10 words>
+
+Example:
+🚇 MTS: ✅ Sem perturbações hoje · 📅 Greve 16-18 nov
    🔗 https://exemplo.pt/noticia-da-greve
-🚆 Fertagus: ✅ Sem notícias de perturbações
+🚆 Fertagus: ✅ Sem perturbações hoje
 """
 
 LINK_PREFIX = "🔗"
