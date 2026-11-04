@@ -1,13 +1,13 @@
 name: Commute check
 
 on:
-  # Disparado à hora certa pelo cron-job.org através da API do GitHub, porque o schedule do GitHub chega com atrasos.
+  # Disparado à hora certa pelo Google Cloud Scheduler através da API do GitHub, porque o schedule do GitHub chega com atrasos.
   workflow_dispatch:
     inputs:
       dry_run:
         description: "Só imprimir, sem enviar para o Telegram"
         type: boolean
-        default: true
+        default: false
 
 jobs:
   check:
@@ -16,8 +16,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
-      - run: uv run train-status-agent ${{ inputs.dry_run && '--dry-run' || '' }}
+
+      - name: Check the commute
+        # Shorter than the job limit, so the alert step below still has time to run.
+        timeout-minutes: 8
+        run: uv run train-status-agent ${{ inputs.dry_run && '--dry-run' || '' }}
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+      - name: Alert if the run failed
+        if: ${{ (failure() || cancelled()) && !inputs.dry_run }}
+        run: |
+          curl -fsS --retry 3 --max-time 20 \
+            "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=⚠️ A verificação do trajeto falhou. Vê fertagus.pt. Detalhes: ${RUN_URL}"
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

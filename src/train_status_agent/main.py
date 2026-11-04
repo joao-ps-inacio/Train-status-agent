@@ -13,6 +13,10 @@ logger = logging.getLogger(__name__)
 
 FALLBACK_MESSAGE = "⚠️ O agente não devolveu resposta hoje."
 
+# The SDK default is 10 minutes per attempt, with 2 retries. Three attempts at this
+# value stay under the workflow's 8-minute step limit, so the except below gets to run.
+API_TIMEOUT_SECONDS = 120
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Check the commute for disruptions and send the result to Telegram.")
@@ -35,7 +39,8 @@ def main() -> None:
     telegram = TelegramClient(settings.telegram_bot_token, settings.telegram_chat_id)
 
     try:
-        status = check_commute(anthropic.Anthropic(api_key=settings.anthropic_api_key)) or FALLBACK_MESSAGE
+        client = anthropic.Anthropic(api_key=settings.anthropic_api_key, timeout=API_TIMEOUT_SECONDS)
+        status = check_commute(client) or FALLBACK_MESSAGE
     except Exception as error:
         logger.exception("An error occurred while checking the commute")
         message = f"⚠️ O agente falhou hoje ({type(error).__name__}). Vê fertagus.pt"
