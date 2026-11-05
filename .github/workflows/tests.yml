@@ -12,4 +12,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
-      - run: uv run pytest
+      - run: uv sync --locked
+      - run: uv run ruff check .
+      - run: uv run mypy src
+      - run: uv run pytest --cov=train_status_agent --cov-branch --cov-fail-under=85
+      - run: uv run train-status-agent --help
+
