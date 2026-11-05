@@ -57,7 +57,3 @@ def main() -> None:
     logger.info("Sending to Telegram: %s", status)
     telegram.send_message(status)
     logger.info("Message sent to Telegram")
-
-
-if __name__ == "__main__":
-    main()

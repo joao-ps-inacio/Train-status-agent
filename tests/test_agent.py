@@ -1,9 +1,9 @@
 from datetime import datetime
+from types import SimpleNamespace
 
 from anthropic.types import (
     Message,
     ServerToolUseBlock,
-    TextBlock,
     Usage,
     WebSearchResultBlock,
     WebSearchToolResultBlock,
@@ -11,18 +11,20 @@ from anthropic.types import (
 )
 
 from train_status_agent.agent import (
+    MODEL,
+    QUESTION,
     TIMEZONE,
+    WEB_SEARCH_TOOL,
     build_system_prompt,
-    drop_unknown_links,
-    extract_final_answer,
+    check_commute,
+    clean_line,
+    remove_urls,
     search_result_urls,
 )
+from train_status_agent.models import CommuteReport, LineStatus
 
 NEWS_URL = "https://example.pt/greve-mts"
-
-
-def text(value: str) -> TextBlock:
-    return TextBlock(type="text", text=value)
+INVENTED_URL = "https://inventado.pt/noticia"
 
 
 def search(*urls: str) -> list:
@@ -51,24 +53,20 @@ def response(*blocks) -> Message:
     )
 
 
-def test_extract_final_answer_skips_text_before_the_last_search():
-    message = response(
-        text("Vou pesquisar."),
-        *search(NEWS_URL),
-        text("Agora a Fertagus."),
-        *search(NEWS_URL),
-        text("🚇 MTS: ✅ Sem notícias de perturbações"),
-    )
-    assert extract_final_answer(message) == "🚇 MTS: ✅ Sem notícias de perturbações"
+def line(**fields) -> LineStatus:
+    return LineStatus(**{"status": "ok", "summary": None, "advice": None, "strike_dates": None, "source_url": None} | fields)
 
 
-def test_extract_final_answer_joins_the_text_blocks_after_the_search():
-    message = response(*search(NEWS_URL), text("🚇 MTS: ⚠️ Greve "), text("(CNN)\n"), text("🚆 Fertagus: ✅"))
-    assert extract_final_answer(message) == "🚇 MTS: ⚠️ Greve (CNN)\n🚆 Fertagus: ✅"
+def fake_client(report: CommuteReport | None, *blocks) -> SimpleNamespace:
+    """A stand-in for anthropic.Anthropic that records each call and returns the given report."""
+    calls: list[dict] = []
 
+    def parse(**kwargs) -> SimpleNamespace:
+        calls.append(kwargs)
+        message = response(*blocks)
+        return SimpleNamespace(content=message.content, usage=message.usage, stop_reason="end_turn", parsed_output=report)
 
-def test_extract_final_answer_without_a_search_returns_all_text():
-    assert extract_final_answer(response(text("🚇 MTS: ✅"))) == "🚇 MTS: ✅"
+    return SimpleNamespace(messages=SimpleNamespace(parse=parse), calls=calls)
 
 
 def test_search_result_urls_collects_every_result():
@@ -85,16 +83,68 @@ def test_search_result_urls_ignores_failed_searches():
     assert search_result_urls(response(failed)) == set()
 
 
-def test_drop_unknown_links_keeps_links_from_the_search():
-    answer = f"🚇 MTS: ⚠️ Greve (CNN)\n   ↳ Ver mts.pt\n   🔗 {NEWS_URL}"
-    assert drop_unknown_links(answer, {NEWS_URL}) == answer
-
-
-def test_drop_unknown_links_removes_invented_links():
-    answer = "🚇 MTS: ⚠️ Greve (CNN)\n   🔗 https://inventado.pt/noticia\n🚆 Fertagus: ✅"
-    assert drop_unknown_links(answer, {NEWS_URL}) == "🚇 MTS: ⚠️ Greve (CNN)\n🚆 Fertagus: ✅"
-
-
 def test_build_system_prompt_includes_today():
     prompt = build_system_prompt(datetime(2026, 10, 26, 7, 0, tzinfo=TIMEZONE))
     assert "26 October 2026" in prompt
+
+
+def test_remove_urls_keeps_text_and_removes_every_kind_of_link():
+    assert remove_urls(f"Vê {NEWS_URL} agora") == "Vê agora"
+    assert remove_urls("Vê www.exemplo.pt agora") == "Vê agora"
+    assert remove_urls("Vê exemplo.com/oferta agora") == "Vê agora"
+
+
+def test_remove_urls_keeps_dates_and_times():
+    assert remove_urls("16-18 nov às 8.30h") == "16-18 nov às 8.30h"
+
+
+def test_remove_urls_keeps_none():
+    assert remove_urls(None) is None
+
+
+def test_clean_line_keeps_a_link_from_the_search():
+    assert clean_line(line(source_url=NEWS_URL), {NEWS_URL}).source_url == NEWS_URL
+
+
+def test_clean_line_drops_a_link_not_in_the_search():
+    assert clean_line(line(source_url=INVENTED_URL), {NEWS_URL}).source_url is None
+
+
+def test_clean_line_removes_links_from_the_text_fields():
+    dirty = line(status="problem", summary=f"Atrasos {INVENTED_URL}", advice=f"Vê {INVENTED_URL}", strike_dates="16 nov evil.com")
+    clean = clean_line(dirty, set())
+    assert (clean.summary, clean.advice, clean.strike_dates) == ("Atrasos", "Vê", "16 nov")
+
+
+def test_check_commute_asks_for_a_report_with_web_search():
+    client = fake_client(CommuteReport(mts=line(), fertagus=line()))
+
+    check_commute(client)
+
+    call = client.calls[0]
+    assert call["model"] == MODEL
+    assert call["tools"] == [WEB_SEARCH_TOOL]
+    assert call["output_format"] is CommuteReport
+    assert call["messages"] == [{"role": "user", "content": QUESTION}]
+    assert "Today is" in call["system"]
+
+
+def test_check_commute_formats_the_report_and_keeps_links_from_the_search():
+    report = CommuteReport(mts=line(strike_dates="16-18 nov", source_url=NEWS_URL), fertagus=line())
+
+    assert check_commute(fake_client(report, *search(NEWS_URL))) == (
+        f"🚇 MTS: ✅ Sem perturbações hoje · 📅 Greve 16-18 nov\n   🔗 {NEWS_URL}\n🚆 Fertagus: ✅ Sem perturbações hoje"
+    )
+
+
+def test_check_commute_removes_an_injected_link_on_either_line():
+    report = CommuteReport(
+        mts=line(status="problem", summary="Greve", source_url=INVENTED_URL),
+        fertagus=line(status="problem", summary=f"Atrasos {INVENTED_URL}"),
+    )
+
+    assert check_commute(fake_client(report, *search(NEWS_URL))) == "🚇 MTS: ⚠️ Greve\n🚆 Fertagus: ⚠️ Atrasos"
+
+
+def test_check_commute_returns_nothing_when_there_is_no_report():
+    assert check_commute(fake_client(None)) == ""
