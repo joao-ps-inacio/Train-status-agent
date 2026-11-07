@@ -2,6 +2,7 @@
 
 import argparse
 import logging
+import os
 
 import anthropic
 
@@ -32,6 +33,25 @@ def configure_logging() -> None:
     logging.getLogger("httpx2").setLevel(logging.WARNING)
 
 
+def mark_alert_sent() -> None:
+    """Tell the workflow that the failure alert was already sent, so it doesn't send another.
+
+    GitHub Actions sets GITHUB_OUTPUT to a file; each "key=value" line written to it
+    becomes a step output that later steps can read. Outside Actions it is not set.
+    """
+    output_path = os.environ.get("GITHUB_OUTPUT")
+    if not output_path:
+        return
+
+    try:
+        with open(output_path, "a", encoding="utf-8") as output:
+            output.write("alert_sent=true\n")
+    except OSError:
+        # Called while handling another error: never let this one replace it.
+        # Worst case, the workflow also sends its alert.
+        logger.exception("Could not tell the workflow that the alert was sent")
+
+
 def main() -> None:
     args = parse_args()
     configure_logging()
@@ -48,6 +68,8 @@ def main() -> None:
             print(message)
         else:
             telegram.send_message(message)
+            # Only after a successful send: if Telegram failed, the workflow must still alert.
+            mark_alert_sent()
         raise
 
     if args.dry_run:
