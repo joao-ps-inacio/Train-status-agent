@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Daily check of the commute (MTS + Fertagus) with alerts sent to Telegram"
 readme = "README.md"
 authors = [
-    { name = "João Inácio", email = "joaopinacio96@gmail.com" }
+    { name = "João Inácio" }
 ]
 requires-python = ">=3.11"
 dependencies = [
