@@ -11,3 +11,10 @@ wheels/
 
 #vars
 .env
+
+# Test coverage
+.coverage
+htmlcov/
+
+# Local archives
+*.zip
