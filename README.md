@@ -79,3 +79,7 @@ src/train_status_agent/
 ## Next steps
 
 - An agent loop with a `get_timetable` tool, to estimate arrival times when there is a delay.
+
+## License
+
+[MIT](LICENSE)
